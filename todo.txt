@@ -1,0 +1,24 @@
+Ready for you to run:
+# 1. Download HF sources
+python scripts/download_sources.py                    # CulturaX bn + FineWeb-Edu + BanglishRev
+python scripts/download_sources.py --source culturax --max-docs 10000   # test mode
+
+# 2. Scrape Prothom Alo (optional, run overnight)
+python scripts/parallel_prothomalo.py --workers 8
+
+# 3. Audit BD:WB ratio of downloaded CulturaX
+python scripts/audit_bd_wb.py --input saved/data/raw/hf/culturax.jsonl --sample 2000
+
+# 4. Train tokenizer (only after you have some raw data)
+python -m src.tokenizer.train_tokenizer --input saved/data/tokenizer/tokenizer_training_corpus.txt --vocab-size 48000
+
+# 5. Wrap & use tokenizer
+python -m src.tokenizer.wrapper   # converts SP → HF tokenizer
+
+# 6. Build final corpus
+python scripts/build_corpus.py
+
+# 7. Clean → pretokenize → pack (existing scripts, already use saved/ paths)
+python scripts/clean_pipeline.py --input saved/data/final/banglagamba_corpus.jsonl --output saved/data/preprocessed/cleaned.jsonl
+python scripts/pretokenize_and_pack.py --input saved/data/preprocessed/cleaned.jsonl --output saved/data/pretokenized/
+Start with step 1 (downloads) any time you like.
