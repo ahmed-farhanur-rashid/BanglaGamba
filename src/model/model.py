@@ -22,7 +22,7 @@ from src.model.embeddings import RMSNorm, TokenEmbedding
 from src.model.attention import GQAttention
 from src.model.ffn import SwiGLU
 from src.model.mamba import MambaBlock
-from src.model.positional_encoder.rope import RotaryEmbedding
+from src.model.rope import RotaryEmbedding
 
 
 class BanglaGambaBlock(nn.Module):

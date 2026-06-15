@@ -36,9 +36,7 @@ BanglaGamba/
 │   │   ├── ffn.py                  # SwiGLU FFN
 │   │   ├── mamba.py                # Mamba-3 wrapper
 │   │   ├── embeddings.py           # RMSNorm + TokenEmbedding
-│   │   └── positional_encoder/
-│   │       └── rope.py             # RoPE
-│   ├── optimizer/
+│   │   ├── rope.py                 # RoPE
 │   │   └── optim.py                # Muon + AdamW factory
 │   ├── training/
 │   │   ├── trainer.py              # Training loop

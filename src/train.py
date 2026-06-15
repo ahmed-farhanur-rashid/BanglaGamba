@@ -30,7 +30,7 @@ import torch
 
 from src.model.config import BanglaGambaConfig
 from src.model.model import BanglaGambaModel
-from src.optimizer.optim import build_optimizers, load_optimizer_config
+from src.model.optim import build_optimizers, load_optimizer_config
 from src.data.collator import build_dataloader
 from src.training.trainer import Trainer, TrainerConfig
 from src.training.scheduler import build_schedulers

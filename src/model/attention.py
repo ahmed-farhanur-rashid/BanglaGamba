@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from src.model.embeddings import PerHeadRMSNorm
-from src.model.positional_encoder.rope import RotaryEmbedding
+from src.model.rope import RotaryEmbedding
 
 
 class GQAttention(nn.Module):

@@ -22,7 +22,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.optimizer.optim import build_param_groups
+from src.model.optim import build_param_groups
 from src.training.checkpoint import save_checkpoint, load_checkpoint, manage_checkpoints
 from src.utils.logging import MetricLogger
 
