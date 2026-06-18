@@ -22,6 +22,7 @@ pip-delete-this-directory.txt
 venv/
 env/
 ENV/
+.venv
 .python-version
 
 # ── IDE & Editors ────────────────────────────────────────────
