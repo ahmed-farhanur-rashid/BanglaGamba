@@ -143,22 +143,54 @@ def get_latest_crawl_id() -> str:
 
 
 def query_domain(domain: str, crawl_id: str, limit: int = 5000) -> list[dict]:
-    """Query the CDX index for all records under a domain in one crawl."""
+    """Query the CDX index for all records under a domain in one crawl.
+
+    Uses showNumPages=true first to check total count, then fetches in
+    batches of PAGE_SIZE to avoid truncation on large result sets.
+    """
+    PAGE_SIZE = 10000  # CDX API reliable limit per request
     url = f"{CC_INDEX_BASE}/{crawl_id}-index"
-    params = {
-        "url": f"{domain}/*",
-        "output": "json",
-        "limit": str(limit),
-        "filter": "status:200",
-    }
-    resp = requests.get(url, params=params, timeout=60)
-    if resp.status_code == 404:
-        return []  # domain not in this crawl
-    resp.raise_for_status()
     records = []
-    for line in resp.text.strip().split("\n"):
-        if line:
-            records.append(json.loads(line))
+    offset = 0
+
+    while offset < limit:
+        batch = min(PAGE_SIZE, limit - offset)
+        params = {
+            "url": f"{domain}/*",
+            "output": "json",
+            "limit": str(batch),
+            "offset": str(offset),
+            "filter": "status:200",
+        }
+        try:
+            resp = requests.get(url, params=params, timeout=120)
+        except requests.exceptions.RequestException as e:
+            print(f"  [warn] request failed for {domain} offset={offset}: {e}")
+            break
+
+        if resp.status_code == 404:
+            break
+        if resp.status_code != 200:
+            print(f"  [warn] status {resp.status_code} for {domain} offset={offset}")
+            break
+
+        # Parse line by line, skip malformed lines
+        new_records = 0
+        for line in resp.text.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+                new_records += 1
+            except json.JSONDecodeError:
+                continue
+
+        # If we got fewer records than requested, we've reached the end
+        if new_records < batch:
+            break
+        offset += batch
+
     return records
 
 
@@ -201,7 +233,7 @@ def _process_record(rec: dict, genre: str, domain: str) -> dict | None:
 
 
 def harvest(crawl_ids: list[str], out_dir: Path, per_domain_limit: int = 50000,
-            workers: int = 16) -> None:
+            workers: int = 16, append: bool = False) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     write_lock = threading.Lock()
 
@@ -212,6 +244,7 @@ def harvest(crawl_ids: list[str], out_dir: Path, per_domain_limit: int = 50000,
 
         for genre, domains in DOMAIN_ALLOWLIST.items():
             out_path = out_dir / f"{genre}.jsonl"
+            mode = "a" if append else "w"
             kept_total = 0
 
             for domain in domains:
@@ -223,7 +256,7 @@ def harvest(crawl_ids: list[str], out_dir: Path, per_domain_limit: int = 50000,
 
                 kept = 0
                 with ThreadPoolExecutor(max_workers=workers) as pool, \
-                     out_path.open("a", encoding="utf-8") as f:
+                     out_path.open(mode, encoding="utf-8") as f:
                     futures = {
                         pool.submit(_process_record, rec, genre, domain): rec
                         for rec in records
@@ -235,6 +268,7 @@ def harvest(crawl_ids: list[str], out_dir: Path, per_domain_limit: int = 50000,
                         with write_lock:
                             f.write(json.dumps(result, ensure_ascii=False) + "\n")
                         kept += 1
+                    mode = "a"  # subsequent domains/crawls append to same file
 
                 print(f"  -> kept {kept}/{len(records)} (Bangla-script, length-filtered)")
                 kept_total += kept
@@ -256,6 +290,8 @@ if __name__ == "__main__":
                               "requests), so this can exceed core count -- "
                               "20-32 is reasonable on an 8-core 7700; trafilatura "
                               "parsing is the CPU cost per doc, not the fetch.")
+    parser.add_argument("--append", action="store_true",
+                         help="Append to existing output files instead of overwriting.")
     args = parser.parse_args()
 
     if args.crawl:
@@ -267,4 +303,4 @@ if __name__ == "__main__":
     print(f"Domains: {sum(len(d) for d in DOMAIN_ALLOWLIST.values())}")
     print(f"Per-domain limit: {args.per_domain_limit}")
     harvest(crawl_ids, Path(args.out), per_domain_limit=args.per_domain_limit,
-            workers=args.workers)
+            workers=args.workers, append=args.append)

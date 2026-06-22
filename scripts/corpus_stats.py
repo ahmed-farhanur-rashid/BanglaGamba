@@ -1,151 +1,179 @@
-#!/usr/bin/env python3
 """
-BanglaGamba — Corpus Statistics
-================================
+Corpus quality assessment for JSONL files.
 
-Computes and prints corpus statistics for the paper's data section.
-Outputs a formatted table of per-source document counts, word counts,
-estimated tokens, and domain coverage.
-
-Input:  saved/data/cleaned/corpus_decontaminated.jsonl (+ banglish)
-Output: printed to stdout (redirect to file for paper use)
+Shows document counts, text length distributions, domain balance,
+duplicate ratios, and samples random documents for manual inspection.
 
 Usage:
-  python scripts/corpus_stats.py
-  python scripts/corpus_stats.py > saved/corpus_statistics.txt
+    # Stats for a directory of JSONL files
+    python scripts/corpus_stats.py saved/data/raw/cc_bangla/
 
-Reference: BanglaFM_Q1_Data_Plan.md Part 6
+    # Stats for a single file
+    python scripts/corpus_stats.py saved/data/raw/cc_bangla/news_major.jsonl
+
+    # Include random samples (5 per file)
+    python scripts/corpus_stats.py saved/data/raw/cc_bangla/ --samples 5
 """
 
-from __future__ import annotations
-
 import argparse
+import hashlib
 import json
-from collections import Counter, defaultdict
+import random
+import sys
+from collections import Counter
 from pathlib import Path
 
-DEFAULT_CORPUS = "saved/data/cleaned/corpus_decontaminated.jsonl"
-DEFAULT_BANGLISH = "saved/data/banglish/synthetic_banglish.jsonl"
 
-# Approximate tokens-per-word ratio for different languages
-TOKENS_PER_WORD = {
-    "bn": 1.3,   # Bangla: more subword splitting
-    "en": 1.2,   # English: typical BPE ratio
-    "code": 1.5, # Code: lots of punctuation/operators
-}
-
-
-def compute_stats(corpus_files: list[str]) -> None:
-    """Compute and print corpus statistics."""
-    stats: dict[str, dict] = defaultdict(
-        lambda: {"docs": 0, "words": 0, "chars": 0}
-    )
-    domain_counter: Counter = Counter()
-    region_counter: Counter = Counter()
-
-    for corpus_file in corpus_files:
-        fpath = Path(corpus_file)
-        if not fpath.exists():
-            print(f"WARNING: File not found, skipping: {corpus_file}")
-            continue
-
-        with open(fpath, encoding="utf-8") as f:
-            for line in f:
-                try:
-                    r = json.loads(line)
-                    st = r.get("source_type", "unknown")
-                    text = r.get("text", "")
-                    word_count = len(text.split())
-
-                    stats[st]["docs"] += 1
-                    stats[st]["words"] += word_count
-                    stats[st]["chars"] += len(text)
-
-                    domain = r.get("domain", r.get("source", "unknown"))
-                    domain_counter[domain] += 1
-
-                    region = r.get("language_region", "unknown")
-                    region_counter[region] += 1
-                except (json.JSONDecodeError, ValueError):
-                    continue
-
-    # ── Print formatted statistics ───────────────────────────────────────
-    print()
-    print("=" * 90)
-    print("  BANGLAGAMBA CORPUS STATISTICS")
-    print("=" * 90)
-    print()
-
-    # Per-source table
-    header = (f"  {'Source Type':35s} {'Docs':>10s} {'Words (M)':>12s} "
-              f"{'Est. Tokens (M)':>18s} {'Avg Words/Doc':>15s}")
-    print(header)
-    print(f"  {'-' * 85}")
-
-    total_docs = 0
+def analyze_file(filepath: Path, num_samples: int = 0) -> dict:
+    """Analyze a single JSONL file and return stats."""
+    doc_count = 0
+    total_chars = 0
     total_words = 0
-    total_est_tokens = 0
+    lengths = []
+    domains = Counter()
+    timestamps = []
+    seen_hashes = set()
+    dup_count = 0
+    samples = []
 
-    for st, s in sorted(stats.items(), key=lambda x: -x[1]["words"]):
-        # Estimate token ratio based on source type
-        if "code" in st.lower() or "python" in st.lower():
-            ratio = TOKENS_PER_WORD["code"]
-        elif "en" in st.lower() or "education" in st.lower():
-            ratio = TOKENS_PER_WORD["en"]
-        else:
-            ratio = TOKENS_PER_WORD["bn"]
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                doc = json.loads(line)
+            except json.JSONDecodeError:
+                continue
 
-        est_tokens = s["words"] * ratio
-        avg_words = s["words"] / max(s["docs"], 1)
+            text = doc.get("text", "")
+            doc_count += 1
+            char_len = len(text)
+            word_len = len(text.split())
+            total_chars += char_len
+            total_words += word_len
+            lengths.append(char_len)
 
-        print(f"  {st:35s} {s['docs']:>10,} {s['words']/1e6:>12.1f} "
-              f"{est_tokens/1e6:>18.1f} {avg_words:>15.0f}")
+            domains[doc.get("domain", "unknown")] += 1
+            if doc.get("timestamp"):
+                timestamps.append(doc["timestamp"])
 
-        total_docs += s["docs"]
-        total_words += s["words"]
-        total_est_tokens += est_tokens
+            # Dedup check
+            h = hashlib.sha256(text.strip().lower().encode("utf-8")).hexdigest()
+            if h in seen_hashes:
+                dup_count += 1
+            seen_hashes.add(h)
 
-    print(f"  {'-' * 85}")
-    print(f"  {'TOTAL':35s} {total_docs:>10,} {total_words/1e6:>12.1f} "
-          f"{total_est_tokens/1e6:>18.1f}")
-    print()
+            # Random sample
+            if num_samples > 0 and len(samples) < num_samples:
+                samples.append({
+                    "domain": doc.get("domain"),
+                    "url": doc.get("url"),
+                    "chars": char_len,
+                    "words": word_len,
+                    "preview": text[:200] + "..." if len(text) > 200 else text,
+                })
 
-    # Domain coverage
-    print(f"  Unique domains/sources: {len(domain_counter)}")
-    print()
-    print(f"  Top 20 domains:")
-    for domain, count in domain_counter.most_common(20):
-        print(f"    {domain:50s} {count:>10,} docs")
-    print()
+    if not lengths:
+        return {"file": str(filepath), "error": "no valid documents"}
 
-    # Language region distribution
-    print(f"  Language region distribution:")
-    for region, count in region_counter.most_common():
-        pct = 100 * count / max(total_docs, 1)
-        print(f"    {region:30s} {count:>10,} docs  ({pct:5.1f}%)")
-    print()
+    lengths_sorted = sorted(lengths)
+    n = len(lengths_sorted)
 
-    # Disk estimates
-    est_disk_gb = total_est_tokens * 1e6 * 2 / (1024 ** 3)  # uint16
-    print(f"  Estimated pretokenized disk: ~{est_disk_gb:.1f} GB (uint16)")
-    print()
-    print("=" * 90)
+    return {
+        "file": filepath.name,
+        "documents": doc_count,
+        "total_words": total_words,
+        "total_chars": total_chars,
+        "total_mb": total_chars / (1024 * 1024),
+        "avg_words": total_words / doc_count,
+        "median_chars": lengths_sorted[n // 2],
+        "min_chars": lengths_sorted[0],
+        "max_chars": lengths_sorted[-1],
+        "p10_chars": lengths_sorted[int(n * 0.1)],
+        "p90_chars": lengths_sorted[int(n * 0.9)],
+        "unique_domains": len(domains),
+        "top_domains": domains.most_common(10),
+        "duplicates": dup_count,
+        "dup_ratio": f"{dup_count / doc_count * 100:.1f}%" if doc_count > 0 else "0%",
+        "samples": samples,
+    }
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Compute corpus statistics for the BanglaGamba paper.",
-    )
-    parser.add_argument("--corpus", default=DEFAULT_CORPUS,
-                        help=f"Main corpus JSONL (default: {DEFAULT_CORPUS}).")
-    parser.add_argument("--banglish", default=DEFAULT_BANGLISH,
-                        help=f"Banglish corpus JSONL (default: {DEFAULT_BANGLISH}).")
-    parser.add_argument("--extra-corpus", nargs="*", default=[],
-                        help="Additional corpus JSONL files.")
-
+    parser = argparse.ArgumentParser(description="Corpus quality stats")
+    parser.add_argument("path", help="JSONL file or directory")
+    parser.add_argument("--samples", type=int, default=0,
+                         help="Number of random samples per file to show")
     args = parser.parse_args()
-    corpus_files = [args.corpus, args.banglish] + args.extra_corpus
-    compute_stats(corpus_files)
+
+    path = Path(args.path)
+    if path.is_file():
+        files = [path]
+    elif path.is_dir():
+        files = sorted(path.glob("*.jsonl"))
+    else:
+        print(f"Error: {path} not found", file=sys.stderr)
+        sys.exit(1)
+
+    if not files:
+        print(f"No JSONL files found in {path}", file=sys.stderr)
+        sys.exit(1)
+
+    grand_total_docs = 0
+    grand_total_words = 0
+    grand_total_dups = 0
+    all_domains = Counter()
+
+    for filepath in files:
+        stats = analyze_file(filepath, num_samples=args.samples)
+        if "error" in stats:
+            print(f"\n{stats['file']}: {stats['error']}")
+            continue
+
+        grand_total_docs += stats["documents"]
+        grand_total_words += stats["total_words"]
+        grand_total_dups += stats["duplicates"]
+
+        print(f"\n{'='*60}")
+        print(f"  {stats['file']}")
+        print(f"{'='*60}")
+        print(f"  Documents:      {stats['documents']:,}")
+        print(f"  Total words:    {stats['total_words']:,}")
+        print(f"  Total size:     {stats['total_mb']:.1f} MB")
+        print(f"  Avg words/doc:  {stats['avg_words']:.0f}")
+        print(f"  Char length:    min={stats['min_chars']}, "
+              f"p10={stats['p10_chars']}, med={stats['median_chars']}, "
+              f"p90={stats['p90_chars']}, max={stats['max_chars']}")
+        print(f"  Unique domains: {stats['unique_domains']}")
+        print(f"  Duplicates:     {stats['duplicates']:,} ({stats['dup_ratio']})")
+
+        print(f"\n  Top domains:")
+        for domain, count in stats["top_domains"]:
+            pct = count / stats["documents"] * 100
+            print(f"    {domain:40s} {count:>8,} ({pct:.1f}%)")
+
+        for domain, count in stats["top_domains"]:
+            all_domains[domain] += count
+
+        if stats["samples"]:
+            print(f"\n  Random samples:")
+            for i, s in enumerate(stats["samples"], 1):
+                print(f"\n  [{i}] {s['domain']} | {s['words']} words | {s['url']}")
+                print(f"      {s['preview'][:300]}")
+
+    print(f"\n{'='*60}")
+    print(f"  GRAND TOTAL")
+    print(f"{'='*60}")
+    print(f"  Documents:      {grand_total_docs:,}")
+    print(f"  Total words:    {grand_total_words:,}")
+    print(f"  Duplicates:     {grand_total_dups:,} "
+          f"({grand_total_dups / grand_total_docs * 100:.1f}%)" if grand_total_docs > 0 else "")
+    print(f"  Unique domains: {len(all_domains)}")
+    print(f"\n  Top 15 domains (all files combined):")
+    for domain, count in all_domains.most_common(15):
+        pct = count / grand_total_docs * 100
+        print(f"    {domain:40s} {count:>8,} ({pct:.1f}%)")
 
 
 if __name__ == "__main__":
