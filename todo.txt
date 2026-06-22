@@ -61,3 +61,29 @@
   python scripts/pretokenize_and_pack.py \
       --input saved/data/preprocessed/cleaned.jsonl \
       --output saved/data/pretokenized/
+
+
+
+
+
+
+
+
+
+# Step 1 — Dedup the existing corpus (~30-60 min)
+#   Writes corpus_deduped.jsonl (~37GB), then deletes corpus_cleaned.jsonl
+python scripts/pipeline/02b_dedup.py
+
+# Step 2 — Train tokenizer directly from deduped JSONL (~2-6 hours)
+#   Extracts text to temp file internally, trains, deletes temp
+python -m src.tokenizer.train_tokenizer \
+    -i saved/data/cleaned/corpus_deduped.jsonl --jsonl
+
+# Step 3 — Pretokenize + pack into 2048-length .npy shards
+python scripts/pipeline/03_pretokenize.py
+
+# Step 4 — Verify shards
+python scripts/pipeline/04_verify.py
+
+# Step 5 (optional) — Once shards verified, reclaim JSONL disk
+# rm saved/data/cleaned/corpus_deduped.jsonl
