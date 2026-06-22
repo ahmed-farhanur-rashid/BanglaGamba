@@ -34,6 +34,7 @@ from pathlib import Path
 
 import requests
 import trafilatura
+from tqdm import tqdm
 from warcio.recordloader import ArcWarcRecordLoader
 
 CC_INDEX_BASE = "https://index.commoncrawl.org"
@@ -245,16 +246,19 @@ def harvest(crawl_ids: list[str], out_dir: Path, per_domain_limit: int = 50000,
         for genre, domains in DOMAIN_ALLOWLIST.items():
             out_path = out_dir / f"{genre}.jsonl"
             mode = "a" if append else "w"
-            kept_total = 0
+            genre_kept = 0
 
             for domain in domains:
-                print(f"[{genre}] querying {domain} in {crawl_id} ...")
+                print(f"[{genre}] querying {domain} ...")
                 records = query_domain(domain, crawl_id, limit=per_domain_limit)
                 if not records:
                     continue
-                print(f"  -> {len(records)} candidate records, fetching with {workers} workers")
 
                 kept = 0
+                failed = 0
+                pbar = tqdm(total=len(records), desc=f"  {domain}", unit="doc",
+                            ncols=100, leave=False)
+
                 with ThreadPoolExecutor(max_workers=workers) as pool, \
                      out_path.open(mode, encoding="utf-8") as f:
                     futures = {
@@ -264,16 +268,20 @@ def harvest(crawl_ids: list[str], out_dir: Path, per_domain_limit: int = 50000,
                     for future in as_completed(futures):
                         result = future.result()
                         if result is None:
-                            continue
-                        with write_lock:
-                            f.write(json.dumps(result, ensure_ascii=False) + "\n")
-                        kept += 1
-                    mode = "a"  # subsequent domains/crawls append to same file
+                            failed += 1
+                        else:
+                            with write_lock:
+                                f.write(json.dumps(result, ensure_ascii=False) + "\n")
+                            kept += 1
+                        pbar.update(1)
+                        pbar.set_postfix(kept=kept, fail=failed)
+                    mode = "a"  # subsequent domains append
 
-                print(f"  -> kept {kept}/{len(records)} (Bangla-script, length-filtered)")
-                kept_total += kept
+                pbar.close()
+                print(f"  -> {domain}: {kept}/{len(records)} kept")
+                genre_kept += kept
 
-            print(f"[{genre}] total kept from {crawl_id}: {kept_total}")
+            print(f"[{genre}] TOTAL kept: {genre_kept}")
 
 
 if __name__ == "__main__":
