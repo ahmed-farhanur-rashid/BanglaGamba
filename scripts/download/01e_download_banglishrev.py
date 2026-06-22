@@ -1,6 +1,7 @@
 """
 Download BanglishRev code-mixed ecommerce reviews.
-Streamed to avoid downloading image zips. Takes ALL reviews.
+Downloads reviews v1.json directly from HF Hub (avoids 50GB of image zips).
+Takes ALL reviews.
 
 Usage:
   python scripts/download/01e_download_banglishrev.py
@@ -10,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from tqdm import tqdm
@@ -28,37 +30,64 @@ def main():
                         help="Test mode: download at most N docs.")
     args = parser.parse_args()
 
-    from datasets import load_dataset
+    from huggingface_hub import hf_hub_download
 
     RAW_DIR.mkdir(parents=True, exist_ok=True)
 
     existing = count_lines(OUTPUT)
+    if args.max_docs and existing >= args.max_docs:
+        print(f"  \u21b7 banglishrev already complete ({existing:,} docs), skipping")
+        return
 
-    ds = load_dataset("BanglishRev/bangla-english-and-code-mixed-ecommerce-review-dataset",
-                       split="train", streaming=True)
+    # Download reviews v1.json (2GB) directly
+    print("[banglishrev] Downloading reviews v1.json from HF Hub...")
+    json_path = hf_hub_download(
+        "BanglishRev/bangla-english-and-code-mixed-ecommerce-review-dataset",
+        "reviews v1.json",
+        repo_type="dataset",
+    )
+    print(f"[banglishrev] Downloaded to cache: {json_path}")
+
+    # Parse nested JSON: list of products, each with "Reviews" list
+    print("[banglishrev] Parsing reviews...")
+    with open(json_path, "r", encoding="utf-8") as jf:
+        products = json.load(jf)
+
+    # Count total reviews for progress bar
+    total_reviews = sum(len(p.get("Reviews", [])) for p in products)
+    print(f"[banglishrev] Found {len(products):,} products, {total_reviews:,} reviews")
+
+    written = existing
+    skipped_existing = existing
+    bar = tqdm(desc="BanglishRev     ", unit="docs", unit_scale=True,
+               initial=existing, total=total_reviews)
 
     with open(OUTPUT, "a") as f:
-        bar = tqdm(desc="BanglishRev     ", unit="docs", unit_scale=True,
-                   initial=existing, total=1_740_000)
-        for i, row in enumerate(ds):
-            if i < existing:
-                continue
-            if args.max_docs and i >= args.max_docs:
+        for product in products:
+            for review in product.get("Reviews", []):
+                bar.update(1)
+
+                if skipped_existing > 0:
+                    skipped_existing -= 1
+                    continue
+                if args.max_docs and written >= args.max_docs:
+                    break
+
+                text = review.get("Review Content", "")
+                if not text or not isinstance(text, str):
+                    continue
+
+                text = normalize_text(text)
+                if not has_min_words(text):
+                    continue
+
+                write_doc(f, text, SOURCE, SOURCE_TYPE, LANGUAGE_REGION)
+                written += 1
+
+            if args.max_docs and written >= args.max_docs:
                 break
 
-            text = row.get("review", "")
-            if not text or not isinstance(text, str):
-                bar.update(1)
-                continue
-
-            text = normalize_text(text)
-            if not has_min_words(text):
-                bar.update(1)
-                continue
-
-            write_doc(f, text, SOURCE, SOURCE_TYPE, LANGUAGE_REGION)
-            bar.update(1)
-        bar.close()
+    bar.close()
 
     size_gb = OUTPUT.stat().st_size / (1024 ** 3)
     count = count_lines(OUTPUT)

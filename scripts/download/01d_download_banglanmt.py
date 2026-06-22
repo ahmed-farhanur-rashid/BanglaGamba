@@ -1,6 +1,7 @@
 """
 Download BanglaNMT parallel Bangla-English pairs.
-2.75M pairs, loaded fully. Writes as "bn |SEP| en" per line.
+Downloads the tar.bz2 directly from HF Hub, extracts train.jsonl.
+Writes as "bn |SEP| en" per line.
 
 Usage:
   python scripts/download/01d_download_banglanmt.py
@@ -10,6 +11,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+import tarfile
 from pathlib import Path
 
 from tqdm import tqdm
@@ -28,30 +31,44 @@ def main():
                         help="Test mode: download at most N docs.")
     args = parser.parse_args()
 
-    from datasets import load_dataset
+    from huggingface_hub import hf_hub_download
 
     RAW_DIR.mkdir(parents=True, exist_ok=True)
 
     existing = count_lines(OUTPUT)
+    if args.max_docs and existing >= args.max_docs:
+        print(f"  \u21b7 banglanmt already complete ({existing:,} docs), skipping")
+        return
 
-    ds = load_dataset("csebuetnlp/BanglaNMT", split="train", streaming=False,
-                       trust_remote_code=True)
+    # Download tar.bz2 (133MB)
+    print("[banglanmt] Downloading data/BanglaNMT.tar.bz2 from HF Hub...")
+    tar_path = hf_hub_download(
+        "csebuetnlp/BanglaNMT",
+        "data/BanglaNMT.tar.bz2",
+        repo_type="dataset",
+    )
+    print(f"[banglanmt] Downloaded to cache: {tar_path}")
 
-    with open(OUTPUT, "a") as f:
+    # Extract and process train.jsonl
+    written = existing
+    with tarfile.open(tar_path, "r:bz2") as tar:
+        f = tar.extractfile("BanglaNMT/train.jsonl")
+        total_lines = sum(1 for _ in f)
+        f.seek(0)
+
         bar = tqdm(desc="BanglaNMT       ", unit="docs", unit_scale=True,
-                   initial=existing, total=len(ds))
-        for i, row in enumerate(ds):
-            if i < existing:
+                   initial=existing, total=total_lines)
+        for line in f:
+            if existing > 0:
+                existing -= 1
+                bar.update(1)
                 continue
-            if args.max_docs and i >= args.max_docs:
+            if args.max_docs and written >= args.max_docs:
                 break
 
-            if "translation" in row:
-                bn_text = row["translation"].get("bn", "")
-                en_text = row["translation"].get("en", "")
-            else:
-                bn_text = row.get("bn", "")
-                en_text = row.get("en", "")
+            row = json.loads(line)
+            bn_text = row.get("bn", "")
+            en_text = row.get("en", "")
 
             if len(bn_text.split()) < 5 or len(en_text.split()) < 5:
                 bar.update(1)
@@ -62,7 +79,9 @@ def main():
                 bar.update(1)
                 continue
 
-            write_doc(f, text, SOURCE, SOURCE_TYPE, LANGUAGE_REGION)
+            with open(OUTPUT, "a") as fout:
+                write_doc(fout, text, SOURCE, SOURCE_TYPE, LANGUAGE_REGION)
+            written += 1
             bar.update(1)
         bar.close()
 
