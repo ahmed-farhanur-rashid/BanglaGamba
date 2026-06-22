@@ -26,7 +26,9 @@ import argparse
 import gzip
 import io
 import json
+import os
 import re
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -36,6 +38,9 @@ import requests
 import trafilatura
 from tqdm import tqdm
 from warcio.recordloader import ArcWarcRecordLoader
+
+# Force unbuffered output for tqdm to display properly
+tqdm.monitor_interval = 0
 
 CC_INDEX_BASE = "https://index.commoncrawl.org"
 CC_DATA_BASE = "https://data.commoncrawl.org"
@@ -239,9 +244,9 @@ def harvest(crawl_ids: list[str], out_dir: Path, per_domain_limit: int = 50000,
     write_lock = threading.Lock()
 
     for crawl_id in crawl_ids:
-        print(f"\n{'='*60}")
-        print(f"CRAWL: {crawl_id}")
-        print(f"{'='*60}")
+        print(f"\n{'='*60}", flush=True)
+        print(f"CRAWL: {crawl_id}", flush=True)
+        print(f"{'='*60}", flush=True)
 
         for genre, domains in DOMAIN_ALLOWLIST.items():
             out_path = out_dir / f"{genre}.jsonl"
@@ -249,7 +254,7 @@ def harvest(crawl_ids: list[str], out_dir: Path, per_domain_limit: int = 50000,
             genre_kept = 0
 
             for domain in domains:
-                print(f"[{genre}] querying {domain} ...")
+                print(f"[{genre}] querying {domain} ...", flush=True)
                 records = query_domain(domain, crawl_id, limit=per_domain_limit)
                 if not records:
                     continue
@@ -257,7 +262,7 @@ def harvest(crawl_ids: list[str], out_dir: Path, per_domain_limit: int = 50000,
                 kept = 0
                 failed = 0
                 pbar = tqdm(total=len(records), desc=f"  {domain}", unit="doc",
-                            ncols=100, leave=False)
+                            ncols=100, leave=False, file=sys.stdout)
 
                 with ThreadPoolExecutor(max_workers=workers) as pool, \
                      out_path.open(mode, encoding="utf-8") as f:
@@ -278,10 +283,10 @@ def harvest(crawl_ids: list[str], out_dir: Path, per_domain_limit: int = 50000,
                     mode = "a"  # subsequent domains append
 
                 pbar.close()
-                print(f"  -> {domain}: {kept}/{len(records)} kept")
+                print(f"  -> {domain}: {kept}/{len(records)} kept", flush=True)
                 genre_kept += kept
 
-            print(f"[{genre}] TOTAL kept: {genre_kept}")
+            print(f"[{genre}] TOTAL kept: {genre_kept}", flush=True)
 
 
 if __name__ == "__main__":
