@@ -22,7 +22,6 @@ from multiprocessing import Pool
 from pathlib import Path
 
 import yaml
-from tqdm import tqdm
 
 # ── Histogram buckets (upper bounds, exclusive) ──────────────────────────────
 BUCKETS = [50, 100, 200, 500, 1000, 2000, 5000, 10000]
@@ -161,7 +160,7 @@ def count_file(args: tuple) -> dict:
         s["latin_ratio"] = 0.0
 
     return {
-        "path": str(path),
+        "path": path,
         "size_bytes": Path(path).stat().st_size,
         "docs": docs,
         "total_words": total_words,
@@ -372,8 +371,6 @@ def main():
     )
     parser.add_argument("paths", nargs="+",
                         help="JSONL files or directories to scan.")
-    parser.add_argument("--workers", type=int, default=4,
-                        help="Number of parallel workers (default: 4).")
     parser.add_argument("--tokenizer", type=str, default=None,
                         help="Path to HF tokenizer for accurate token counting.")
     parser.add_argument("--output", "-o", type=str, default=None,
@@ -399,15 +396,16 @@ def main():
     for f in jsonl_files:
         size_gb = f.stat().st_size / (1024 ** 3)
         print(f"        {f.name} ({size_gb:.1f} GB)", file=sys.stderr)
-    print(f"[count] Workers: {args.workers}", file=sys.stderr)
 
-    # Run workers
+    # Run workers in parallel — one per file
     tasks = [(str(f), i) for i, f in enumerate(jsonl_files)]
     partials = []
-    with Pool(args.workers) as pool:
-        for result in tqdm(pool.imap_unordered(count_file, tasks),
-                           total=len(jsonl_files), desc="Counting",
-                           unit="file"):
+    with Pool(min(len(jsonl_files), 4)) as pool:
+        for result in pool.imap_unordered(count_file, tasks):
+            name = Path(result["path"]).name
+            size_gb = result["size_bytes"] / (1024 ** 3)
+            print(f"  ✓ {name}  ({result['docs']:,} docs, {size_gb:.1f} GB)",
+                  file=sys.stderr)
             partials.append(result)
 
     print("[count] Merging results...", file=sys.stderr)
