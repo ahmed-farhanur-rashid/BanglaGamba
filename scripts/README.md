@@ -14,3 +14,7 @@ Run in order:
 
 After step 8, set max_steps in configs/default_training.yaml (value printed by step 8).
 Then: `python src/train.py --model configs/banglagamba_12l.yaml ...`
+
+## Utilities
+
+- `util/count_words.py` — Blazing-fast JSONL word counter. Counts words, chars, Bangla/Latin ratios, per-source stats, and outputs YAML report. Use `--tokenizer` for accurate token estimates.
