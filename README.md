@@ -2,7 +2,7 @@
 
 **A ~199M parameter Mamba-3 / GQA hybrid Bangla foundation model.**
 
-Formerly BanglaFM. A Bangla-centric language model pretrained from scratch on a multilingual corpus (Bangla + English + Banglish + code-mixed). First foundation model with explicit Banglish (romanized Bangla) pretraining.
+Formerly BanglaFM. A Bangla-centric language model pretrained from scratch on a bilingual corpus (Bangla + English.
 
 ## Architecture
 
