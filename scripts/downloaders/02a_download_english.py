@@ -102,11 +102,6 @@ def _stream_config(repo: str, config: str, word_budget: int, total_words: int,
             skipped += 1
             continue
 
-        if not is_clean(text):
-            filtered_content += 1
-            skipped += 1
-            continue
-
         write_doc(f, f"{LANG_EN}{text}", SOURCE, SOURCE_TYPE,
                   LANGUAGE_REGION, word_count)
         total_words += word_count
