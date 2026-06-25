@@ -28,7 +28,7 @@ OUTPUT = CLEANED_DIR / "bangla.jsonl"
 
 SOURCES = [
     ("wiki_bangla", RAW_DIR / "wiki_bangla.jsonl"),
-    ("titullm", RAW_DIR / "titullm.jsonl"),
+    ("titullm", RAW_DIR / "titullm_cc.jsonl"),
 ]
 
 

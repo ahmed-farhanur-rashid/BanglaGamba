@@ -21,7 +21,7 @@ from _common import (
 )
 
 
-OUTPUT = RAW_DIR / "titullm.jsonl"
+OUTPUT = RAW_DIR / "titullm_cc.jsonl"
 SOURCE = "titullm"
 SOURCE_TYPE = "web_bangla"
 LANGUAGE_REGION = "BD"
@@ -39,7 +39,7 @@ def main():
 
     with open(OUTPUT, "a") as f:
         bar = tqdm(desc="TituLM CC       ", unit="docs", unit_scale=True,
-                   initial=existing)
+                   initial=existing, total=24_300_000)
         written = 0
         skip = existing
         for row in ds:
