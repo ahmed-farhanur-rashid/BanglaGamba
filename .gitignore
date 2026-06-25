@@ -61,7 +61,10 @@ AGENTS.md
 context.md
 
 # ── Saved Artifacts (data, models, tokenizers, checkpoints) ─
-saved/
+checkpoints/
+model/
+preprocessed/
+pretokenized/
 
 # ── Data Files (anywhere in tree) ────────────────────────────
 *.jsonl
@@ -104,7 +107,6 @@ runs/
 mlruns/
 lightning_logs/
 outputs/
-logs/
 *.tfevents*
 events.out.*
 
@@ -130,7 +132,6 @@ htmlcov/
 .ruff_cache/
 
 # ── Misc ─────────────────────────────────────────────────────
-*.log
 *.tmp
 *.bak
 *.orig
