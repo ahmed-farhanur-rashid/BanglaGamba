@@ -8,8 +8,8 @@ Input:  saved/data/raw/titullm.jsonl + saved/data/raw/wiki_bangla.jsonl
 Output: saved/data/cleaned/bangla.jsonl
 
 Usage:
-  python scripts/pipeline/02b_dedup_mono.py
-  python scripts/pipeline/02b_dedup_mono.py --delete-raw
+  python scripts/pipeline/01b_dedup_mono.py
+  python scripts/pipeline/01b_dedup_mono.py --delete-raw
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ CLEANED_DIR = Path("saved/data/cleaned")
 OUTPUT = CLEANED_DIR / "bangla.jsonl"
 
 SOURCES = [
-    ("titullm", RAW_DIR / "titullm.jsonl"),
     ("wiki_bangla", RAW_DIR / "wiki_bangla.jsonl"),
+    ("titullm", RAW_DIR / "titullm.jsonl"),
 ]
 
 
