@@ -104,8 +104,7 @@ def train_tokenizer(
     # If JSONL, extract text to a temp .txt in the same directory
     tmp_txt_path = None
     if jsonl:
-        # ponytail: write to /tmp, not into the data directory
-        tmp_txt_path = Path(tempfile.mktemp(suffix=".txt"))
+        tmp_txt_path = Path(input_path.parent / "_tokenizer_tmp.txt")
         _jsonl_to_txt(input_path, tmp_txt_path)
         actual_input = str(tmp_txt_path)
     else:
