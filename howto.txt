@@ -1,5 +1,5 @@
 ============================================================
-  Bangla Gamba — Data Pipeline
+  Data Pipeline
 ============================================================
   Target: 8-10B of total tokens maintaining 85:15 Bng:Eng ratio
   Sources: Titullm CC + Fineweb-edu + BanglaNMT + NLLB
@@ -21,6 +21,33 @@
   python scripts/pipeline/01a_dedup_nmt.py
   python scripts/pipeline/01b_dedup_mono.py
 
+
+============================================================
+  Preperation: Run these, otherwise you'll hit OOM Error 
+============================================================
+
+This stops systemd-oomd (Systemd Out-Of-Memory Daemon)
+Without this, your process will be killed due to "memory pressure"
+
+  sudo systemctl stop systemd-oomd 
+  sudo systemctl stop systemd-oomd.socket systemd-oomd.service
+  systemctl status systemd-oomd
+
+Add a 120G swap to device (provided that you have 32G ram)
+Add more swap if less and less if you have more ram
+
+  swapon --show
+  free -h
+
+  sudo swapoff -a
+  sudo rm -f /swapfile
+  sudo fallocate -l 120G /swapfile
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile
+  sudo swapon /swapfile
+
+  swapon --show
+  free -h
 
 ============================================================
   STEP 3: Sample Tokenizer Training Set & Train tokenizer 
@@ -62,6 +89,22 @@
     --output-dir saved/tokenizer/hf \
     --test
 
+  5. Apply a few fixes
+
+  Problem:
+  tokenizer_class": "TokenizersBackend" is wrong.
+  It should be "PreTrainedTokenizerFast", otherwise HF's AutoTokenizer.from_pretrained() may fail or warn.
+
+  fix:
+  sed -i 's/"TokenizersBackend"/"PreTrainedTokenizerFast"/' saved/tokenizer/hf/tokenizer_config.json
+
+  Problem:
+  "model_max_length": 1000000000000000019884624838656 — that's HF's default sentinel for "not set". 
+  You'll want to set this to your actual context length when you define your model architecture, 
+  otherwise HF will warn on long sequences
+
+  fix:
+  sed -i 's/"model_max_length": [0-9]*/"model_max_length": 2048/' saved/tokenizer/hf/tokenizer_config.json
 
   Optional flags for evaluate_tokenizer:
     --skip-references          skip downloading reference models

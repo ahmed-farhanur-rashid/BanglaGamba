@@ -146,8 +146,8 @@
     "<|reserved_98|>",
     "<|reserved_99|>"
   ],
-  "model_max_length": 1000000000000000019884624838656,
+  "model_max_length": 2048,
   "pad_token": "<pad>",
-  "tokenizer_class": "TokenizersBackend",
+  "tokenizer_class": "PreTrainedTokenizerFast",
   "unk_token": "<unk>"
 }
