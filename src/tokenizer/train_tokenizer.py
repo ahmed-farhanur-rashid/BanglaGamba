@@ -36,56 +36,38 @@ except ImportError:
     )
 
 
-def _split_sentences(text: str):
+def _doc_to_text(text: str) -> str:
+    """Return the document text as a single training entry.
+
+    Preserves paragraph structure with newlines.  Does NOT split into
+    sentences — that inflates 2.83M docs into 82M entries and causes OOM.
+    SentencePiece builds an internal lattice per entry; fewer entries
+    means dramatically less RAM (lattice count drops 30x).
     """
-    Split a document into sentences for SentencePiece training.
-
-    Strategy:
-      1. Split on newlines first — paragraph breaks are natural boundaries
-         and produce clean, self-contained lines.
-      2. Within each paragraph, split on sentence-ending punctuation
-         (both ASCII and Bangla "।" daari) so no single line is too long
-         for SentencePiece's internal buffer.
-      3. Normalize whitespace within each piece but preserve the text.
-
-    This avoids the previous bug where " ".join(text.split()) flattened
-    an entire document into one line, causing SentencePiece to skip it
-    entirely due to max_sentence_length.
-    """
-    import re
-
-    # Sentence-ending punctuation: ASCII . ! ? and Bangla daari ।
-    # Keeps the punctuation attached to the preceding sentence.
-    _SENT_SPLIT = re.compile(r'(?<=[.!?।])\s+')
-
+    lines = []
     for paragraph in text.splitlines():
-        paragraph = paragraph.strip()
-        if not paragraph:
-            continue
-        # Split long paragraphs into sentences
-        for sentence in _SENT_SPLIT.split(paragraph):
-            sentence = " ".join(sentence.split())  # normalise whitespace only
-            if sentence:
-                yield sentence
+        paragraph = " ".join(paragraph.split())  # normalise whitespace only
+        if paragraph:
+            lines.append(paragraph)
+    return "\n".join(lines)
 
 
 def _jsonl_to_txt(jsonl_path: Path, txt_path: Path) -> int:
-    """Stream JSONL, extract 'text' field, write one sentence per line.
+    """Stream JSONL, extract 'text' field, write one doc per line.
 
-    Each document is split into sentences/paragraphs so that no single
-    line exceeds SentencePiece's max_sentence_length, ensuring nothing
-    is silently skipped during training.
+    Each document is written as a single entry (paragraphs joined by
+    newlines).  This keeps entry count at ~2.83M instead of 82M,
+    avoiding SentencePiece OOM (SP builds an internal lattice per entry).
 
-    Returns the number of sentences written.
+    Returns the number of docs written.
     """
     from tqdm import tqdm
 
     print(f"\nExtracting text from JSONL -> {txt_path}")
     print("  (temp file -- will be deleted after training)")
-    print("  (splitting docs into sentences so nothing is skipped)")
+    print("  (doc-level: one entry per document, no sentence splitting)")
 
     docs = 0
-    sentences = 0
     with open(jsonl_path, "r") as fin, open(txt_path, "w") as fout:
         for line in tqdm(fin, desc="Extracting", unit="docs", unit_scale=True):
             try:
@@ -95,14 +77,14 @@ def _jsonl_to_txt(jsonl_path: Path, txt_path: Path) -> int:
             text = doc.get("text", "")
             if not text:
                 continue
-            for sentence in _split_sentences(text):
-                fout.write(sentence + "\n")
-                sentences += 1
-            docs += 1
+            doc_text = _doc_to_text(text)
+            if doc_text:
+                fout.write(doc_text + "\n")
+                docs += 1
 
     size_gb = txt_path.stat().st_size / (1024 ** 3)
-    print(f"  Extracted {docs:,} docs → {sentences:,} sentences  ({size_gb:.2f} GB)")
-    return sentences
+    print(f"  Extracted {docs:,} docs  ({size_gb:.2f} GB)")
+    return docs
 
 
 def train_tokenizer(
@@ -112,7 +94,7 @@ def train_tokenizer(
     vocab_size: int = VOCAB_SIZE,
     num_threads: int = 8,
     input_sentence_size: int = 3_000_000,
-    max_sentence_length: int = 16384,
+    max_sentence_length: int = 65536,
     jsonl: bool = False,
 ) -> Path:
     """Train a SentencePiece Unigram tokenizer."""
@@ -250,8 +232,8 @@ def main():
     parser.add_argument("--num-threads", type=int, default=8)
     parser.add_argument("--input-sentence-size", type=int, default=3_000_000,
                         help="Max sentences loaded into RAM (default: 3M, tuned for 32GB).")
-    parser.add_argument("--max-sentence-length", type=int, default=16384,
-                        help="Max chars per sentence; longer lines skipped (default: 16384).")
+    parser.add_argument("--max-sentence-length", type=int, default=65536,
+                        help="Max chars per sentence; longer lines skipped (default: 65536).")
 
     args = parser.parse_args()
     train_tokenizer(

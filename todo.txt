@@ -87,3 +87,13 @@ python scripts/pipeline/04_verify.py
 
 # Step 5 (optional) — Once shards verified, reclaim JSONL disk
 # rm saved/data/cleaned/corpus_deduped.jsonl
+
+
+
+python3 -m src.tokenizer.train_tokenizer \
+    --input saved/data/tokenizer_set/corpus.jsonl \
+    --jsonl \
+    --output-dir saved/tokenizer \
+    --input-sentence-size 0 \
+    --max-sentence-length 65536 \
+    --num-threads 4 2>&1 | tee saved/logs/tokenizer_train.log
