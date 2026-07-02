@@ -17,9 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import re
 import shutil
-import unicodedata
 from pathlib import Path
 
 from tqdm import tqdm
@@ -32,14 +30,6 @@ SOURCES = [
     ("wiki_bangla", RAW_DIR / "wiki_bangla.jsonl"),
     ("titullm", RAW_DIR / "titullm_cc.jsonl"),
 ]
-
-
-def normalize_for_hash(text: str) -> bytes:
-    """Normalize text before hashing so trivial formatting/encoding
-    differences (whitespace, Unicode form) don't defeat exact dedup."""
-    text = unicodedata.normalize("NFC", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text.encode("utf-8")
 
 
 def main():
@@ -69,11 +59,9 @@ def main():
                 total += 1
 
     # Exact dedup via SHA-256
-    seen_hashes: dict[bytes, str] = {}   # hash -> source_name that kept it
+    seen_hashes: set[bytes] = set()
     kept = 0
-    empty_text = 0
-    dupes_by_source = {name: 0 for name, _ in existing}      # docs dropped, by their own source
-    dupes_vs_source = {name: 0 for name, _ in existing}      # docs dropped, by the source that "won"
+    dupes = 0
 
     with open(OUTPUT, "w") as fout:
         with tqdm(total=total, desc="Mono dedup", unit="docs", unit_scale=True) as bar:
@@ -87,18 +75,12 @@ def main():
                             continue
 
                         text = doc.get("text", "")
-                        norm = normalize_for_hash(text)
-                        if not norm:
-                            empty_text += 1
-                            continue
-
-                        h = hashlib.sha256(norm).digest()
+                        h = hashlib.sha256(text.encode()).digest()
 
                         if h in seen_hashes:
-                            dupes_by_source[source_name] += 1
-                            dupes_vs_source[seen_hashes[h]] += 1
+                            dupes += 1
                             continue
-                        seen_hashes[h] = source_name
+                        seen_hashes.add(h)
 
                         fout.write(line)
                         kept += 1
@@ -107,22 +89,13 @@ def main():
     in_size = sum(p.stat().st_size for _, p in existing) / (1024 ** 3)
     out_size = OUTPUT.stat().st_size / (1024 ** 3)
 
-    total_dupes = sum(dupes_by_source.values())
-
     print(f"\n{'=' * 50}")
     print(f"=== MONO DEDUP COMPLETE ===")
     print(f"  Input docs:     {total:,}")
-    print(f"  Empty text:     {empty_text:,}")
-    print(f"  Duplicates:     {total_dupes:,}")
+    print(f"  Duplicates:     {dupes:,}")
     print(f"  Kept:           {kept:,}")
     print(f"  Output:         {out_size:.1f} GB  →  {OUTPUT}")
     print(f"  Input:          {in_size:.1f} GB")
-    print(f"  --- Dupes dropped, by their own source ---")
-    for name, _ in existing:
-        print(f"    {name}: {dupes_by_source[name]:,} docs dropped as duplicates")
-    print(f"  --- Duplicates absorbed by the surviving copy's source ---")
-    for name, _ in existing:
-        print(f"    {name}: {dupes_vs_source[name]:,} later dupes matched a doc kept from here")
     print(f"{'=' * 50}")
 
     if args.delete_raw:
